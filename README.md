@@ -6,6 +6,8 @@ This app is for exploration, visualization, and analysis of ARK Fund data. I'm i
 
 This project exists because I'm interested in programming, data science, and personal-finance. This project is aimmed specifically at ARK funds because Cathie Wood has done a phenominal job (in 2020 particularly) at creating a very profitable ETF.
 
+If this project is in any way infringing on ARK investments, I will be unhappy but I will take this project off github and just post a snapshot & summary of what I'm doing instead. I just assume (and its never safe to assume) it is safe to have a public project on this given the information is publicly available for download.
+
 # Background
 Cathie Wood has gained a lot of attention in 2020 because of her amazing returns on the various ARK Funds (ARKK, ARKQ, ARKG, ARKF, ARKW, and most recently... ARKX which was just announced!)
 
