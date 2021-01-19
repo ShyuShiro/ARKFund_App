@@ -72,35 +72,36 @@ Meanwhile the Task Scheduler was set to run Daily (even Sat and Sun because you 
 # 2 - sectors.db (`ARK Visualizations.ipynb` > `update_sectors()`)
 
 ## Function calls:
-
-None
+- capitalization(): Once today's ".csv" is loaded into memory --- compute market cap & cap-size via `finviz` for all __new__ tickers
 
 ## Details:
 
-The ".csv" files come with headers:
-- Date
-- Company
-- Ticker
-- Shares
-- Weight(%)
-
-To gain further insight on company investments `finviz` python package was used to gather the sector & market cap for each __unique__ company ticker.
+The ".csv" files don't have information like market cap or market valuation. To gain further insight on company investments `finviz` python package was used to gather the sector & market cap for each __unique__ company ticker.
 
 *Note: Not all company investments have finviz info because they are not all NADAQ/NYSE companies. Example -- ticker "ARCT UQ" for a therapuetic holding company. In this case, the python script provides a "NA" for sector*
 
 Because any company's sector doesn't change significantly between subsequent trading periods, this information can be stored in a sectors.db sql database for quick reference.
 
-However, this information will need to be updated periodically -- no current functionality.
+However, this information will need to be updated periodically -- updated via update_capitalization() which is in the main function (update_arkfund()).
 
 # 3 - arkfunds.db (`ARK Visualizations.ipynb` > `update_arkfund()`)
 
 ## Function calls:
 - update_sectors(): Once today's ".csv" is loaded into memory --- check if any new unique tickers appear & grab sector info for all old/new tickers
-- capitalization(): Once today's ".csv" is loaded into memory --- compute market cap & cap-size via `finviz` for all __new__ tickers
+- change_in_portfolio(): Compares today's trading session to yesterday to find details like new opened positions, closed positions, and "alerts" of significant share change
+- backup_data(): Activates only on Friday ... backup both `ARKFund.db` and `sectors.db`
+- update_capitalizations(): Activates only on Friday ... Update the ['cap','market_cap'] information for `sectors.db` THEN subsequently update the entire `ARKFund.db` database with the new `sectors.db` info
 
 ## Details:
 
-The .csv files downloaded from (#1) are processed into a sqlite database for efficient storage via `pandas` and `sqlite3`. 
+This is the main function! The .csv files downloaded from (#1) are processed into a sqlite database for efficient storage via `pandas` and `sqlite3`. 
+
+## Output:
+- df_all: All newly added df entries (not actually all of ARKFund.db, just the new entries currently processed. If none processed, this is None)
+- sectors: The up-to-date `sectors.db` information
+- new: df containing any new positions opened by ARK investments
+- closed: df containing any positions closed by ARK investments
+- new: df containing any positions which saw significant change in shares (>|10%| change for NA/mid/large or >|4.5%| for small cap)
 
 # 4 - Grab data from arkfunds.db (`ARK Visualizations.ipynb` > `see_data(db=0)`)
 
@@ -111,7 +112,7 @@ The .csv files downloaded from (#1) are processed into a sqlite database for eff
 - db = which database to grab from (0 = arkfunds.db | 1 = sectors.db)
 
 ## Details:
-A simple quick "SELECT * FROM {db}" query.
+A simple quick "SELECT * FROM {db}" query execution wrapped into a function so I don't have to type all the sqlite3 necessities like "sqlite3.connect(db_name)".
 
 Once the database is sufficiently large ... this function will expand to include a time-frame parameter so that >1 yr of data is not queried each time.
 
