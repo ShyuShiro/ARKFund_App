@@ -354,7 +354,7 @@ def update_capitalization(manual_update=False):
     else:
         pass #Dont execute unless it's Friday
 
-def update_arkfund(display_changes=False):
+def update_arkfund(display_changes=False,manual_update=False):
     import glob
     import os
     import sqlite3
@@ -466,7 +466,7 @@ def update_arkfund(display_changes=False):
     print("SQL Database has been successfully updated.")
     
     #Backup servers as necessary (Current trigger is: Friday (weekday == 4))
-    update_capitalization() #Updates all info for sectors.db then ARKFund.db ... a bit redundant because we just loaded data today (but runs quite fast)
+    update_capitalization(manual_update=manual_update) #Updates all info for sectors.db then ARKFund.db ... a bit redundant because we just loaded data today (but runs quite fast)
     backup_data() #function checks weekday and returns nothing if weekday != 4 ... it backs up both ".db" files
         
     _, new, closed, alerts = change_in_portfolio() #Determine changes, new positions, closed positions, alerts
