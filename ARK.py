@@ -245,7 +245,6 @@ def change_in_portfolio(date1=None,date2=None,fund=None,debug=False):
     
     ###Determine positions that closed
     closed = diff[pd.isna(diff['shares_y'])==True] #All positions which no longer have shares on today's date are closed
-    display(closed)
     #Determine date the position(s) were closed
     sell_date = []
     for _,row in closed.iterrows():
@@ -269,13 +268,13 @@ def change_in_portfolio(date1=None,date2=None,fund=None,debug=False):
         print("dates:")
         print(date1,date2)
         print("Changes:")
-        display(changes)
+        print(changes)
         print("New positions:")
-        display(new)
+        print(new)
         print("Closed positions:")
-        display(closed)
+        print(closed)
         print("Alerts:")
-        display(alerts)
+        print(alerts)
     
     return changes, new, closed, alerts
     
@@ -354,7 +353,108 @@ def update_capitalization(manual_update=False):
     else:
         pass #Dont execute unless it's Friday
 
-def update_arkfund(display_changes=False,manual_update=False):
+def ticker_lookup(tickers,together=True,funds=None):
+    import matplotlib.pyplot as plt
+    import matplotlib.dates as mdates
+    import pandas as pd
+    import datetime
+    import numpy as np
+    
+    df = see_data() #Grab all data in ARKFund.db
+    df['date'] = df['date'].astype('datetime64[ns]') #Convert date to datetime object so data can be sorted
+    df = df.sort_values(['date','fund'],ascending=True) #Sort by ascending date
+
+    #Compute a date axis
+    earliest_date = df.iloc[0]['date']
+    latest_date = df.iloc[-1]['date']
+    xrange = pd.date_range(earliest_date,latest_date).date #Create a range of dates between start and end
+    xrange = [datetime.datetime.strftime(i,"%m/%d/%Y") for i in xrange] #Convert datetime object to string "01/04/2021"
+    
+    plot_count = len(tickers) #How many plots per fund
+    
+    colors = ['magenta','k','cyan','g','r','dark green','pink','orange','yellow'] #Color pallete choices
+
+    if funds == None: #If no fund is provided, search all 5 funds
+        funds = ["ARKF","ARKG","ARKK","ARKQ","ARKW"]
+
+    def log_reduction(val): #Reduce the y-axis by a factor of X
+        import numpy as np
+        reduced = [np.round(i/1000,2) for i in val] #Reduce share size by factor of 1000
+        return reduced
+    def timestamp_to_MonthDay(lst): #Convert "2021-01-14 00:00:00" to "01/14" for all elements in a list
+        return [i.strftime("%m/%d") for i in lst]
+    
+    fund_label = []
+    dates_vals = []
+    if together:
+        all_df = pd.DataFrame()
+        i = 1
+
+        for ticker in tickers:
+
+            subset = df[df['ticker']==ticker.upper()].groupby('fund')
+            plt.figure(figsize=(14,6))
+            #plt.subplot(1,plot_count,i) #This would stack plots horizontally ... the above does it veritcally
+            j = 0
+
+            for _,r in subset:
+                shares = log_reduction(r['shares'])
+                fund_label.append(r['fund'].unique()[0])
+                dates = np.arange(0,len(shares)) #Create an arbitrary date axis from [0,n]
+                if len(dates_vals) < len(dates): #If a fund opened a new position in a ticker ... it would start plotting at the beginning of time
+                    dates_vals = dates #This sets the x-axis to be maximized correctly
+                    dates_labels = timestamp_to_MonthDay(r['date']) #This converts the correct x-axis from [0,1,2,...,n] to appropriate labels
+                else: #This case would be specifically if a fund opens a new position in the fund
+                    dates = np.arange(len(dates_vals)-len(dates),len(dates_vals)) #The fund will not span the [0,1,2,...,n], but instead some [m,m+1,...,n]
+                plt.plot(dates,shares,label=ticker,color=colors[j])
+                for idx,Y in enumerate(shares):
+                    plt.annotate(str(Y),xy=(dates[idx],Y),xytext=(-10,5),textcoords='offset points')
+                j += 1
+                all_df = all_df.append(r) #df to return in case its useful
+                
+            plt.title(ticker.upper())
+            plt.xticks(dates_vals,rotation=45,labels=dates_labels) #Feed the arbirary axis with labels as the dates
+            #plt.yticks([]) #Hide y-axis (already have the numbers on the data points) -- might turn this into a feature
+            #For shared plot ... need y-axis and legend on all figures
+            plt.ylabel("kilo-shares (1 = 1k shares)")
+            plt.legend(labels=fund_label,loc="center right")
+            plt.grid(axis='both')
+            i += 1
+    else:
+        all_df = pd.DataFrame()
+        i = 1
+        plt.figure(figsize=(14,6))
+        plot_count = len(funds) #How many plots per fund
+
+        for fund in funds:
+
+            subset = df[df['fund']==fund.upper()]
+            plt.subplot(1,plot_count,i)
+            j = 0
+
+            for ticker in tickers:
+                r = subset[subset['ticker']==ticker.upper()]
+                shares = log_reduction(r['shares'])
+                dates = np.arange(0,len(shares)) #Create arbitrary date axis
+                plt.plot(dates,shares,label=fund,color=colors[j])
+                plt.xticks(dates_label,rotation=45,labels=dates_vals) #Feed in arbirary axis with labels as the dates
+                for idx,Y in enumerate(shares):
+                    plt.annotate(str(Y),xy=(idx,Y),xytext=(-10,5),textcoords='offset points')
+                j += 1
+                all_df = all_df.append(r) #df to return in case its useful
+
+            plt.title(fund.upper())
+            #plt.yticks([])
+            plt.grid(axis='y')
+            plt.tight_layout()
+            if i == 1:
+                plt.ylabel("kilo-shares (1 = 1k shares)")
+            if i == plot_count:
+                plt.legend(labels=tickers,loc="center right")
+            i += 1
+    return all_df
+    
+def update_arkfund(display_changes=False,manual_update=False,path = r"C:\Users\Brandon\Desktop\ARK Fund CSV Files"):
     import glob
     import os
     import sqlite3
@@ -362,7 +462,7 @@ def update_arkfund(display_changes=False,manual_update=False):
     import finviz
     
     #Change directory
-    set_dir()
+    set_dir(path=path)
 
     #Load all excel files & Concat together
     files = glob.glob("*.csv") #Find all
@@ -472,10 +572,10 @@ def update_arkfund(display_changes=False,manual_update=False):
     _, new, closed, alerts = change_in_portfolio() #Determine changes, new positions, closed positions, alerts
     if display_changes:
         print("New positions:")
-        display(new)
+        print(new)
         print("Closed positions:")
-        display(closed)
+        print(closed)
         print("Alerts:")
-        display(alerts)
+        print(alerts)
         
     return df_all,sectors, new, closed, alerts #df_all = df of newly appended data .. NOT the data in arkfunds.db | sectors = sector all info from sectors.db
