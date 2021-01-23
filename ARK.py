@@ -293,89 +293,86 @@ def update_capitalization(manual_update=False):
     
     today = datetime.datetime.today().weekday()
     #today = 4 #For debug testing, set value to 4 manually
-    if today == 4 or manual_update==True:
-        print("update_capitalization():")
-        print("\tUpdating capitalization information for entire database")
-        conn = sqlite3.connect("ARKFund.db")
-        conn2 = sqlite3.connect("sectors.db")
-        df = pd.read_sql_query("SELECT * FROM arkfunds",conn)
-        print("\tConnection to ARKFund.db established")
-        sectors = pd.read_sql_query("SELECT * FROM sectors",conn2)
-        print("\tConnection to sectors.db established")
-
-        #Create placeholder lists
-        c = [] #Cap designation (Eg: Small)
-        m = [] #Market cap value (Eg: 1B)
-
-        count = 0
-        total = len(sectors['ticker'])
-        print("\tUpdating %s tickers:"%total)
-        for i in sectors['ticker']:
-            if count%40 == 0: #Every 40 rows, update the progress
-                print("\t\t%.2f/100%%"%(np.round(count/total,2)*100))
-            try:
-                cap_designation,market_cap = capitalization(i)
-            except:
-                cap_designation,market_cap = ["NA","NA"]
-            c.append(cap_designation)
-            m.append(market_cap)
-            count += 1
-
-        print("\t\tDone finding capitalizations -- Merging to `sectors` database")
-        sectors['cap'] = c
-        sectors['market_cap'] = m
-
-        print("\tWriting results to sectors.db")
-        sectors.to_sql(name='sectors',con=conn2,if_exists='replace',index=False)
-        print("\t\tSectors.db updated successfully")
-
-        #Create dictionaries to map (Ticker --> Cap) and (Ticker --> Market_cap)
-        dct_cap = dict(sectors[['ticker','cap']].to_dict('split')['data']) # dct of {'AAPL':'Large', ... , 'ZM':'Large'}
-        dct_market_cap = dict(sectors[['ticker','market_cap']].to_dict('split')['data']) #dct of {'AAPL':'2180B', ... , 'ZM':'114B'}
-
-        df = df.drop(['cap','market_cap'],axis=1) #Drop the cap and market_cap columns because we'll be updating them
-        
-        #Re-create the columns via mapping
-        df['cap'] = df['ticker'].map(dict(dct_cap))
-        df['market_cap'] = df['ticker'].map(dict(dct_market_cap))
-
-        print("\tWriting results to ARKFunds.db")
-        df.to_sql(name='arkfunds', con=conn, if_exists="replace", index=False)
-        print("\t\tARKFund.db updated successfully")
-
-        #Now actually save the data (even though printouts have been saying its been successful)
-        conn.commit()
-        conn2.commit()
-
-        conn.close()
-        conn2.close()
-        print("\tDatabase connections closed successfully")
+    if manual_update=="disable":
+        pass
     else:
-        pass #Dont execute unless it's Friday
+        if today == 4 or manual_update==True:
+            print("update_capitalization():")
+            print("\tUpdating capitalization information for entire database")
+            conn = sqlite3.connect("ARKFund.db")
+            conn2 = sqlite3.connect("sectors.db")
+            df = pd.read_sql_query("SELECT * FROM arkfunds",conn)
+            print("\tConnection to ARKFund.db established")
+            sectors = pd.read_sql_query("SELECT * FROM sectors",conn2)
+            print("\tConnection to sectors.db established")
 
-def ticker_lookup(tickers,together=True,funds=None):
-    import matplotlib.pyplot as plt
-    import matplotlib.dates as mdates
+            #Create placeholder lists
+            c = [] #Cap designation (Eg: Small)
+            m = [] #Market cap value (Eg: 1B)
+
+            count = 0
+            total = len(sectors['ticker'])
+            print("\tUpdating %s tickers:"%total)
+            for i in sectors['ticker']:
+                if count%40 == 0: #Every 40 rows, update the progress
+                    print("\t\t%.2f/100%%"%(np.round(count/total,2)*100))
+                try:
+                    cap_designation,market_cap = capitalization(i)
+                except:
+                    cap_designation,market_cap = ["NA","NA"]
+                c.append(cap_designation)
+                m.append(market_cap)
+                count += 1
+
+            print("\t\tDone finding capitalizations -- Merging to `sectors` database")
+            sectors['cap'] = c
+            sectors['market_cap'] = m
+
+            print("\tWriting results to sectors.db")
+            sectors.to_sql(name='sectors',con=conn2,if_exists='replace',index=False)
+            print("\t\tSectors.db updated successfully")
+
+            #Create dictionaries to map (Ticker --> Cap) and (Ticker --> Market_cap)
+            dct_cap = dict(sectors[['ticker','cap']].to_dict('split')['data']) # dct of {'AAPL':'Large', ... , 'ZM':'Large'}
+            dct_market_cap = dict(sectors[['ticker','market_cap']].to_dict('split')['data']) #dct of {'AAPL':'2180B', ... , 'ZM':'114B'}
+
+            df = df.drop(['cap','market_cap'],axis=1) #Drop the cap and market_cap columns because we'll be updating them
+
+            #Re-create the columns via mapping
+            df['cap'] = df['ticker'].map(dict(dct_cap))
+            df['market_cap'] = df['ticker'].map(dict(dct_market_cap))
+
+            print("\tWriting results to ARKFunds.db")
+            df.to_sql(name='arkfunds', con=conn, if_exists="replace", index=False)
+            print("\t\tARKFund.db updated successfully")
+
+            #Now actually save the data (even though printouts have been saying its been successful)
+            conn.commit()
+            conn2.commit()
+
+            conn.close()
+            conn2.close()
+            print("\tDatabase connections closed successfully")
+        else:
+            pass #Dont execute unless it's Friday
+
+def ticker_lookup_dash(tickers,together=True,funds=None):
+    '''
+    This version of `ticker_lookup` instead only returns the dataframe (no plot)
+    
+    Dash cannot use matplotlib plots =/
+    '''
     import pandas as pd
     import datetime
     import numpy as np
     
+    if type(tickers)==str:
+        tickers = [tickers]
+    
+    #load & sort data
     df = see_data() #Grab all data in ARKFund.db
     df['date'] = df['date'].astype('datetime64[ns]') #Convert date to datetime object so data can be sorted
     df = df.sort_values(['date','fund'],ascending=True) #Sort by ascending date
-
-    #Compute a date axis
-    earliest_date = df.iloc[0]['date']
-    latest_date = df.iloc[-1]['date']
-    xrange = pd.date_range(earliest_date,latest_date).date #Create a range of dates between start and end
-    xrange = [datetime.datetime.strftime(i,"%m/%d/%Y") for i in xrange] #Convert datetime object to string "01/04/2021"
-    
-    plot_count = len(tickers) #How many plots per fund
-    
-    colors = ['magenta','k','cyan','g','r','dark green','pink','orange','yellow'] #Color pallete choices
-
-    if funds == None: #If no fund is provided, search all 5 funds
-        funds = ["ARKF","ARKG","ARKK","ARKQ","ARKW"]
 
     def log_reduction(val): #Reduce the y-axis by a factor of X
         import numpy as np
@@ -384,74 +381,13 @@ def ticker_lookup(tickers,together=True,funds=None):
     def timestamp_to_MonthDay(lst): #Convert "2021-01-14 00:00:00" to "01/14" for all elements in a list
         return [i.strftime("%m/%d") for i in lst]
     
-    fund_label = []
-    dates_vals = []
-    if together:
-        all_df = pd.DataFrame()
-        i = 1
-
-        for ticker in tickers:
-
-            subset = df[df['ticker']==ticker.upper()].groupby('fund')
-            plt.figure(figsize=(14,6))
-            #plt.subplot(1,plot_count,i) #This would stack plots horizontally ... the above does it veritcally
-            j = 0
-
-            for _,r in subset:
-                shares = log_reduction(r['shares'])
-                fund_label.append(r['fund'].unique()[0])
-                dates = np.arange(0,len(shares)) #Create an arbitrary date axis from [0,n]
-                if len(dates_vals) < len(dates): #If a fund opened a new position in a ticker ... it would start plotting at the beginning of time
-                    dates_vals = dates #This sets the x-axis to be maximized correctly
-                    dates_labels = timestamp_to_MonthDay(r['date']) #This converts the correct x-axis from [0,1,2,...,n] to appropriate labels
-                else: #This case would be specifically if a fund opens a new position in the fund
-                    dates = np.arange(len(dates_vals)-len(dates),len(dates_vals)) #The fund will not span the [0,1,2,...,n], but instead some [m,m+1,...,n]
-                plt.plot(dates,shares,label=ticker,color=colors[j])
-                for idx,Y in enumerate(shares):
-                    plt.annotate(str(Y),xy=(dates[idx],Y),xytext=(-10,5),textcoords='offset points')
-                j += 1
-                all_df = all_df.append(r) #df to return in case its useful
-                
-            plt.title(ticker.upper())
-            plt.xticks(dates_vals,rotation=45,labels=dates_labels) #Feed the arbirary axis with labels as the dates
-            #plt.yticks([]) #Hide y-axis (already have the numbers on the data points) -- might turn this into a feature
-            #For shared plot ... need y-axis and legend on all figures
-            plt.ylabel("kilo-shares (1 = 1k shares)")
-            plt.legend(labels=fund_label,loc="center right")
-            plt.grid(axis='both')
-            i += 1
-    else:
-        all_df = pd.DataFrame()
-        i = 1
-        plt.figure(figsize=(14,6))
-        plot_count = len(funds) #How many plots per fund
-
-        for fund in funds:
-
-            subset = df[df['fund']==fund.upper()]
-            plt.subplot(1,plot_count,i)
-            j = 0
-
-            for ticker in tickers:
-                r = subset[subset['ticker']==ticker.upper()]
-                shares = log_reduction(r['shares'])
-                dates = np.arange(0,len(shares)) #Create arbitrary date axis
-                plt.plot(dates,shares,label=fund,color=colors[j])
-                plt.xticks(dates_label,rotation=45,labels=dates_vals) #Feed in arbirary axis with labels as the dates
-                for idx,Y in enumerate(shares):
-                    plt.annotate(str(Y),xy=(idx,Y),xytext=(-10,5),textcoords='offset points')
-                j += 1
-                all_df = all_df.append(r) #df to return in case its useful
-
-            plt.title(fund.upper())
-            #plt.yticks([])
-            plt.grid(axis='y')
-            plt.tight_layout()
-            if i == 1:
-                plt.ylabel("kilo-shares (1 = 1k shares)")
-            if i == plot_count:
-                plt.legend(labels=tickers,loc="center right")
-            i += 1
+    all_df = pd.DataFrame()
+    for ticker in tickers:
+        subset = df[df['ticker']==ticker.upper()].groupby('fund')
+        for _,r in subset:
+            shares = log_reduction(r['shares'])
+            dates = timestamp_to_MonthDay(r['date']) #This converts the correct x-axis from [0,1,2,...,n] to appropriate labels                
+            all_df = all_df.append(pd.DataFrame({'fund':r['fund'],'date':dates,'shares':shares})) #df to return in case its useful
     return all_df
     
 def update_arkfund(display_changes=False,manual_update=False,path = r"C:\Users\Brandon\Desktop\ARK Fund CSV Files"):

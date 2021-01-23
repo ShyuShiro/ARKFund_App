@@ -7,6 +7,7 @@ from dash.dependencies import Input, Output, State
 import pandas as pd
 from datetime import date, timedelta, datetime
 import plotly.express as px
+import plotly.graph_objects as go
 
 #To be able to import the ARK.py file and its modules, the directory needs to be added to PATH
 import os
@@ -19,7 +20,7 @@ if module_path not in sys.path:
 from ARK import *
 
 #Before loading the applet -- Run the main function
-df_today,sectors,new,closed,alerts = update_arkfund(display_changes=False,manual_update=False) #Leaving `path` argument as default
+df_today,sectors,new,closed,alerts = update_arkfund(display_changes=False,manual_update='disable') #Leaving `path` argument as default
 
 df = see_data() #Load all of ARKFund.db as df
 
@@ -60,6 +61,7 @@ app.layout = html.Div(children=[
             dcc.Input(
                 id="ticker_input",
                 type="text",
+                value="NNDM",
                 placeholder="Example ticker: 'TSLA'",
             )],
         className='one columns')
@@ -71,16 +73,23 @@ app.layout = html.Div(children=[
             html.H3(id='textbox1',
                 children='',
         )],
-        className='six columns'),
+        className='two columns'),
+        
+        html.Div([
+            html.Button(id='ticker_button',
+                children='Update',
+                n_clicks=0
+        )],
+        className='two columns')
         
         
     ],className='row'),
     
     #Row 3
     html.Div([
-        html.Div([
-            dcc.Graph(id='ticker_lookup_chart') #Ticker_lookup chart
-        ],className='six columns')
+            html.Div([
+                dcc.Graph(id='ticker_lookup_chart') #Ticker_lookup chart
+            ],className='six columns')
     ],className='row')
 ]) #Close app.layout
 
@@ -99,18 +108,57 @@ def update_textbox(start_date,end_date,ticker):
     return output_string #report data,column-headers
 
 @app.callback([Output("ticker_lookup_chart","figure")],
-              [Input("ticker_input",'value')]
+              [Input("ticker_button",'n_clicks')],
+              [State("ticker_input",'value')]
               )
-def update_ticker_lookup_chart(ticker):
-    if ticker is None:
-        ticker = "TSLA"
-    try:
-        lookup = ticker_lookup(list(ticker),together=True,funds=None) #lookup is a pandas dataframe
-        fig = px.line(lookup, 
-            x="date", y="shares", color='fund')
-    except:
-        fig = ""
-    return fig
+def update_ticker_lookup_chart(n_clicks,ticker):
+    lookup = ticker_lookup_dash(ticker) #lookup is a pandas dataframe
+    fig = go.Figure()
+    for fund,dat in lookup.groupby('fund'):
+        fig.add_trace(go.Scatter(
+                        x=dat['date'], #x-val
+                        y=dat['shares'], #y-val
+                        mode='lines+markers', #plot as line + dots
+                        text="Shares: %d"%[i for i in dat['shares']], #Show the values next to the datapoints
+                        textposition="bottom center",
+                        textfont=dict(
+                            family="sans serif",
+                            size=16,
+                            color="Crimson"
+                        ),
+                        name=fund)) #Name each line for legend plotting
+    #fig.update_traces(textposition='top center')
+    fig.update_layout(
+        title={
+            'text': ticker,
+            #'y':0.9,
+            'x':0.5,
+            'xanchor': 'center',
+            'yanchor': 'top'
+        },
+        #xaxis_title="X Axis Title",
+        yaxis_title="shares",
+        legend_title="Funds: ",
+        showlegend=True, #Show legend even if there is only 1 line
+        font=dict(
+            family="Courier New, monospace",
+            size=18,
+            color="RebeccaPurple"
+            ),
+        legend=dict(
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1,
+            bgcolor="LightBlue",
+            bordercolor="Black",
+            borderwidth=1
+        )
+    )
+
+    return [fig] #Needs to be returned as a list
+    
 
 if __name__ == '__main__':
     app.run_server(debug=True,port=8050)
