@@ -203,6 +203,9 @@ def change_in_portfolio(date1=None,date2=None,fund=None,debug=False):
     #Ex: If a new position is opened on 1/11 ... how do you know it is new unless you can confirm from 1/10 that a position was not previously held
     loc_initial_date = np.where(np.array(unique_dates)==date1)[0][0]-1 #Minus 1 to reach the previous date
     
+    if loc_initial_date == -1:
+        loc_initial_date += 1 #change to 0 index if it is the first date
+    
     #If no fund provided, simply search by dates
     if fund == None:
         #Grab subset info for the dates
@@ -225,6 +228,7 @@ def change_in_portfolio(date1=None,date2=None,fund=None,debug=False):
     changes = diff.rename(columns={'shares_x':"shares_then","shares_y":"shares_now",
                                 'date_x':"start_date","date_y":"end_date"}) #Rename for clarity
     changes = changes[['start_date','end_date','fund','company','ticker','shares_then','shares_now','change','percent_change','cap']]
+    changes = changes[changes['change']!=0] #Drop any rows which have no action (ie: Change = 0 because no change in shares)
     
     ###Determine positions that are new
     new = changes[pd.isna(changes['shares_then'])] #All positions which didn't have shares before are new
@@ -240,6 +244,7 @@ def change_in_portfolio(date1=None,date2=None,fund=None,debug=False):
         initiation_date.append(subset.iloc[0]['date'])
 
     new = new[['fund','ticker','shares_now']] #Drop the useless information (NaN columns)
+    new = new.rename(columns={'shares_now':'shares_initiated'}) #rename column
     new['initiation_date'] = initiation_date #Create a new column with the date of position start
     new = new.sort_values(by='initiation_date',ascending=False) #Sort df by open dates
     
@@ -268,13 +273,13 @@ def change_in_portfolio(date1=None,date2=None,fund=None,debug=False):
         print("dates:")
         print(date1,date2)
         print("Changes:")
-        print(changes)
+        display(changes)
         print("New positions:")
-        print(new)
+        display(new)
         print("Closed positions:")
-        print(closed)
+        display(closed)
         print("Alerts:")
-        print(alerts)
+        display(alerts)
     
     return changes, new, closed, alerts
     
@@ -355,7 +360,7 @@ def update_capitalization(manual_update=False):
             print("\tDatabase connections closed successfully")
         else:
             pass #Dont execute unless it's Friday
-
+        
 def ticker_lookup_dash(tickers,together=True,funds=None):
     '''
     This version of `ticker_lookup` instead only returns the dataframe (no plot)
@@ -390,6 +395,48 @@ def ticker_lookup_dash(tickers,together=True,funds=None):
             all_df = all_df.append(pd.DataFrame({'fund':r['fund'],'date':dates,'shares':shares})) #df to return in case its useful
     return all_df
     
+def store_logs(changes,new,closed,alerts):
+    '''
+    function to save closed, opened, and changes to .csv output
+    
+    reasoning:
+        -A closed position may not remain closed ... it may re-open in the future
+            -These would be captured once as a closed ... but not necessarily an opened position in the future (may need to adjust code when that happens)
+    '''
+    import datetime
+    import pandas as pd
+    set_dir()
+    
+    #Define some parameters
+    d = datetime.datetime.today().date()
+    base = str(d.year) + "-" + str(d.month) + "-" + str(d.day)
+    dirr = "Logs/"
+    dirr2 = "Logs/alerts/"
+    dirr3 = "Logs/changes/"
+    
+    #Load in previous logs for new & closed positions
+    df_new = pd.read_csv(r"Logs\new_positions.csv")
+    df_closed = pd.read_csv(r"Logs\closed_positions.csv")
+    
+    #Need to convert str to datetime64[ns]
+    df_new['initiation_date'] = df_new['initiation_date'].astype('datetime64[ns]')
+    df_closed['close_date'] = df_closed['close_date'].astype('datetime64[ns]')
+    
+    #Append data together
+    new = new.append(df_new).sort_values(by='initiation_date',ascending=False)
+    closed = closed.append(df_closed).sort_values(by='close_date',ascending=False)
+    
+    #Delete any duplicate entries
+    new = new.drop_duplicates(ignore_index=True)
+    closed = closed.drop_duplicates(ignore_index=True)
+    
+    #Changes and alert can just be regularly updated (because I'll have a log date associated to these files)
+    changes.to_csv(dirr3 + base+" changes.csv",index=False)
+    alerts.to_csv(dirr2 + base + " alerts.csv",index=False)    
+    new.to_csv(dirr + "new_positions.csv",index=False)
+    closed.to_csv(dirr + "closed_positions.csv",index=False)
+    print("Daily changes, new/closed, and alert positions have been saved")
+      
 def update_arkfund(display_changes=False,manual_update=False,path = r"C:\Users\Brandon\Desktop\ARK Fund CSV Files"):
     import glob
     import os
@@ -505,13 +552,13 @@ def update_arkfund(display_changes=False,manual_update=False,path = r"C:\Users\B
     update_capitalization(manual_update=manual_update) #Updates all info for sectors.db then ARKFund.db ... a bit redundant because we just loaded data today (but runs quite fast)
     backup_data() #function checks weekday and returns nothing if weekday != 4 ... it backs up both ".db" files
         
-    _, new, closed, alerts = change_in_portfolio() #Determine changes, new positions, closed positions, alerts
+    changes, new, closed, alerts = change_in_portfolio() #Determine changes, new positions, closed positions, alerts
     if display_changes:
         print("New positions:")
-        print(new)
+        display(new)
         print("Closed positions:")
-        print(closed)
+        display(closed)
         print("Alerts:")
-        print(alerts)
+        display(alerts)
         
-    return df_all,sectors, new, closed, alerts #df_all = df of newly appended data .. NOT the data in arkfunds.db | sectors = sector all info from sectors.db
+    return df_all,sectors, changes, new, closed, alerts #df_all = df of newly appended data .. NOT the data in arkfunds.db | sectors = sector all info from sectors.db

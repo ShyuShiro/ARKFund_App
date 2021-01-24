@@ -18,9 +18,23 @@ if module_path not in sys.path:
 
 #Now import ARK.py functions
 from ARK import *
+set_dir()
 
 #Before loading the applet -- Run the main function
-df_today,sectors,new,closed,alerts = update_arkfund(display_changes=False,manual_update='disable') #Leaving `path` argument as default
+df_today,sectors,changes,_,_,alerts = update_arkfund(display_changes=False,manual_update='disable') #Leaving `path` argument as default
+
+#Grab new/close position log files
+new = pd.read_csv(r"Logs\new_positions.csv") #Load in the full log file of new positions
+closed = pd.read_csv(r"Logs\closed_positions.csv") # --------- of the closed positions
+
+#Sort the changes df by ticker
+changes = changes.sort_values(by='ticker')
+
+#Remove unnecessary start vs end date columns for Changes & Alerts
+current_trading_session = changes['end_date'].iloc[0] #Grab the trading session info for reference
+print(str(current_trading_session)[:10])
+changes = changes.drop(['start_date','end_date'],axis=1)
+alerts = alerts.drop(['start_date','end_date'],axis=1)
 
 df = see_data() #Load all of ARKFund.db as df
 
@@ -88,9 +102,68 @@ app.layout = html.Div(children=[
     #Row 3
     html.Div([
             html.Div([
-                dcc.Graph(id='ticker_lookup_chart') #Ticker_lookup chart
+                dcc.Graph(id='ticker_lookup_chart'), #Ticker_lookup chart
+            ],className='six columns'),
+            html.Div([html.H1("Alerts"),
+                dash_table.DataTable(
+                    id='alerts_table',
+                    style_cell={'textAlign': 'left',
+                               'font_family': 'Arial',
+                                'font_size': '18px'},
+                    columns=[{"name": i, "id": i} for i in alerts.columns],
+                    data=alerts.to_dict('records'),
+                    style_as_list_view=True,
+                    style_table={'overflowX': 'auto'},
+                )
             ],className='six columns')
+    ],className='row'),
+    
+    #Row 4
+    html.Div([
+        
+            #Changes table
+            html.Div([html.H1("Changes in last trading session"),
+                dash_table.DataTable(
+                    id='changes_table',
+                    style_cell={'textAlign': 'left',
+                                'font_family': 'Arial',
+                                'font_size': '18px'},
+                    columns=[{"name": i, "id": i} for i in changes.columns],
+                    data=changes.to_dict('records'),
+                    style_as_list_view=True,
+                    fixed_rows={'headers': True}, #Allow headers to follow scrolling -- Vertical scrolling
+                    style_table={'height': 600, # defaults to 500 
+                                'overflowX': 'auto'},  #Horizontal scrolling
+                )
+            ],className='six columns'),
+        
+            #New table
+            html.Div([html.H1("Recently Opened Positions"),
+                dash_table.DataTable(
+                    id='new_table',
+                    style_cell={'textAlign': 'left',
+                               'font_family': 'Arial',
+                                'font_size': '18px'},
+                    columns=[{"name": i, "id": i} for i in new.columns],
+                    data=new.to_dict('records'),
+                    style_as_list_view=True,
+                )
+            ],className='three columns'),
+        
+            #Closed table
+            html.Div([html.H1("Recently Closed Positions"),
+                dash_table.DataTable(
+                    id='closed_table',
+                    style_cell={'textAlign': 'left',
+                               'font_family': 'Arial',
+                                'font_size': '18px'},
+                    columns=[{"name": i, "id": i} for i in closed.columns],
+                    data=closed.to_dict('records'),
+                    style_as_list_view=True,
+                )
+            ],className='three columns')
     ],className='row')
+    
 ]) #Close app.layout
 
 ########################################################################################
@@ -119,13 +192,6 @@ def update_ticker_lookup_chart(n_clicks,ticker):
                         x=dat['date'], #x-val
                         y=dat['shares'], #y-val
                         mode='lines+markers', #plot as line + dots
-                        text="Shares: %d"%[i for i in dat['shares']], #Show the values next to the datapoints
-                        textposition="bottom center",
-                        textfont=dict(
-                            family="sans serif",
-                            size=16,
-                            color="Crimson"
-                        ),
                         name=fund)) #Name each line for legend plotting
     #fig.update_traces(textposition='top center')
     fig.update_layout(
@@ -154,11 +220,18 @@ def update_ticker_lookup_chart(n_clicks,ticker):
             bgcolor="LightBlue",
             bordercolor="Black",
             borderwidth=1
+        ),
+        dragmode='pan', #Set default mode to pan instead of zoom
+        hovermode="x unified", #to cause the label to appear for ALL lines based on the x-axis location hover (https://plotly.com/python/hover-text-and-formatting/)
+        hoverlabel=dict(
+            bgcolor="white",
+            font_size=16,
+            font_family="Rockwell"
         )
     )
 
     return [fig] #Needs to be returned as a list
-    
+
 
 if __name__ == '__main__':
     app.run_server(debug=True,port=8050)
