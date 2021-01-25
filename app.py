@@ -32,7 +32,7 @@ changes = changes.sort_values(by='ticker')
 
 #Remove unnecessary start vs end date columns for Changes & Alerts
 current_trading_session = changes['end_date'].iloc[0] #Grab the trading session info for reference
-print(str(current_trading_session)[:10])
+current_trading_session = str(current_trading_session)[:10] #Truncate to YYYY-MM-DD from the original datetime64 obj.
 changes = changes.drop(['start_date','end_date'],axis=1)
 alerts = alerts.drop(['start_date','end_date'],axis=1)
 
@@ -67,44 +67,54 @@ app.layout = html.Div(children=[
                 max_date_allowed=max_date+timedelta(1),
                 initial_visible_month=date.today(),
                 clearable=True,
-                end_date=max_date
+                start_date=min_date, #Initialize as 1/4
+                end_date=max_date #Initialize as today's date
             )],
         className='three columns'),
         
-        html.Div([
-            dcc.Input(
-                id="ticker_input",
-                type="text",
-                value="NNDM",
-                placeholder="Example ticker: 'TSLA'",
-            )],
-        className='one columns')
+        html.Div([ #Ticker search box
+            dcc.Dropdown(
+                id = 'ticker_input',
+                options= [{'label': i, 'value': i} for i in df['ticker'].unique()],
+                value = "NNDM", #Default value
+                placeholder="Select a ticker", #display text if no value selected
+            )],className='two columns'),
+        
+        html.Div([ #Update button
+            html.Button(id='ticker_button',
+                children='Update',
+                n_clicks=0
+            )
+        ],className='two columns')
     ],className='row'),
     
     #Row 2
     html.Div([
-        html.Div([
-            html.H3(id='textbox1',
-                children='',
-        )],
-        className='two columns'),
-        
-        html.Div([
-            html.Button(id='ticker_button',
-                children='Update',
-                n_clicks=0
-        )],
-        className='two columns')
-        
-        
+            #ticker table --- ticker specific transactions
+                html.Div([
+                    dcc.Graph(id='ticker_lookup_chart'), #Ticker_lookup chart
+                ],className='six columns'),
+                
+                html.Div([
+                    html.H1(id='textbox1',
+                              children = "Ticker Transactions - "
+                    ),
+                    dash_table.DataTable(
+                        id='transactions_table',
+                        style_cell={'textAlign': 'left',
+                                    'font_family': 'Arial',
+                                    'font_size': '18px'},
+                        style_as_list_view=True,
+                        fixed_rows={'headers': True}, #Allow headers to follow scrolling -- Vertical scrolling
+                        style_table={'height': 600, # defaults to 500 
+                                    'overflowX': 'auto'},  #Horizontal scrolling
+                    )],className='six columns')        
     ],className='row'),
     
     #Row 3
     html.Div([
             html.Div([
-                dcc.Graph(id='ticker_lookup_chart'), #Ticker_lookup chart
-            ],className='six columns'),
-            html.Div([html.H1("Alerts"),
+                html.H1("Alerts for session - " + current_trading_session),
                 dash_table.DataTable(
                     id='alerts_table',
                     style_cell={'textAlign': 'left',
@@ -122,7 +132,8 @@ app.layout = html.Div(children=[
     html.Div([
         
             #Changes table
-            html.Div([html.H1("Changes in last trading session"),
+            html.Div([
+                html.H1("Changes in last trading session - " + current_trading_session),
                 dash_table.DataTable(
                     id='changes_table',
                     style_cell={'textAlign': 'left',
@@ -169,23 +180,13 @@ app.layout = html.Div(children=[
 ########################################################################################
 ############      Define Callback functions        #####################################
 
-#Callback for Date selection
-@app.callback([Output("textbox1","children")],
-              [Input("date1","start_date"),Input("date1","end_date"),Input("ticker_input",'value')]
-              )
-def update_textbox(start_date,end_date,ticker):
-    if start_date is None or end_date is None or ticker is None:
-        output_string = ["Select a start date"]
-    else:
-        output_string = ["You selected " + start_date + " to " + end_date + " for ticker: " + ticker]
-    return output_string #report data,column-headers
-
+#Call back for ticker chart creation
 @app.callback([Output("ticker_lookup_chart","figure")],
-              [Input("ticker_button",'n_clicks')],
+              [Input("ticker_button",'n_clicks'),Input("date1","start_date"),Input("date1","end_date")],
               [State("ticker_input",'value')]
               )
-def update_ticker_lookup_chart(n_clicks,ticker):
-    lookup = ticker_lookup_dash(ticker) #lookup is a pandas dataframe
+def update_ticker_lookup_chart(n_clicks,date1,date2,ticker):
+    lookup = ticker_lookup_dash(ticker,date1,date2) #lookup is a pandas dataframe
     fig = go.Figure()
     for fund,dat in lookup.groupby('fund'):
         fig.add_trace(go.Scatter(
@@ -232,6 +233,25 @@ def update_ticker_lookup_chart(n_clicks,ticker):
 
     return [fig] #Needs to be returned as a list
 
+#Callback for Transaction Table
+@app.callback([Output("textbox1","children"),Output('transactions_table','columns'),Output('transactions_table','data')],
+              [Input("ticker_button",'n_clicks'),Input("date1","start_date"),Input("date1","end_date")],
+              [State("ticker_input",'value')])
+def update_textbox_transaction_log(n_clicks,start_date,end_date,ticker):
+    if ticker is None:
+        output_string = ["Select a ticker"] #Return generic statement
+        columns = [] #Return no data
+    else:
+        output_string = ["Ticker Transaction Log - " + ticker] #Return specific ticker info
+        transaction_log = compute_transactions(ticker,start_date,end_date)
+        
+        #Convert date column from datetime64[ns] to str & grab only YYYY-MM-DD
+        transaction_log['date'] = transaction_log['date'].astype('str')
+        transaction_log['date'] = transaction_log['date'].str.extract(r'(\d{4}-\d{2}-\d{2})')
+
+        columns=[{"name": i, "id": i} for i in transaction_log.columns] #Return specific ticker data table
+        data=transaction_log.to_dict('records')
+    return output_string,columns,data
 
 if __name__ == '__main__':
     app.run_server(debug=True,port=8050)

@@ -23,7 +23,9 @@ def see_data(db=0): #Function to view the data in the database easily
 
 def capitalization(ticker): #Determine cap size of company
     import finviz
-    try:
+    import yfinance as yf
+    
+    try: #finviz approach
         info = finviz.get_stock(ticker)['Market Cap'] #Get market cap
 
         #Split market cap to take only whole number
@@ -52,11 +54,37 @@ def capitalization(ticker): #Determine cap size of company
             cap = "Large"
         else:
             cap = "Nano" #Catch case if something else shows up ... would have to assume Nano cap
-    except:
-        cap = "NA"
-        valuation = "NA"
-        units = ""
-    return cap,str(valuation)+units #Cap = classification | MarketCap    
+    except: #If finviz is unable to gather the information ... try yfinance
+        try:
+            valuation = yf.Ticker(ticker).info['marketCap']
+            if valuation/1000000000>10: #Greater than 10B company
+                valuation = valuation/1000000000
+                cap = "Large"
+                units = "B"
+            elif valuation/1000000000>2: #Greater than 2B company
+                valuation = valuation/1000000000
+                cap = "Mid"
+                units = "B"
+            elif valuation/1000000000>0: #In the billion range
+                valuation = valuation/1000000000
+                cap = "Small"
+                units = "B"
+            else:
+                if valuation/1000000>300: #Greater than 300M company
+                    valuation = valuation/1000000
+                    cap = "Small"
+                    units = "M"
+                else:
+                    valuation = valuation/1000000
+                    cap = "Micro"
+                    units = "M"
+            valuation = int(str(valuation).split('.')[0]) #Finalize the valuation as an integer of the whole number value
+        except: #If yfinance doesnt work -- simply state "NA"
+            cap = "NA"
+            valuation = "NA"
+            units = ""
+        
+    return cap,str(valuation)+units #Cap = classification | MarketCap
 
 def update_sectors(df):
     '''
@@ -67,6 +95,7 @@ def update_sectors(df):
     ---- Update the sectors.db to include this unique ticker
     '''
     import finviz
+    import yfinance as yf
     import os
     import sqlite3
     import pandas as pd
@@ -101,6 +130,12 @@ def update_sectors(df):
         data_to_process = True
     
     if data_to_process:
+        
+        #Clean up the ticker column of dataframe
+        df['ticker'] = df['ticker'].str.split().str.get(0) #Split & grab the first word of the ticker column to save as ticker
+            #This converts things like "TAK UN" to "TAK" while still keeping things like "AAPL" as "AAPL"
+        
+        #Now find unique entries
         tickers = df['ticker'].unique() 
 
         missing = []
@@ -123,10 +158,14 @@ def update_sectors(df):
                 try:
                     sec = finviz.get_stock(i)['Sector']
                     c,m = capitalization(i)
-                except:
-                    sec = "NA" #Some tickers like "ARCT UQ" will not pull up a result
-                    c = "NA"
-                    m = "NA"
+                except: #If finviz cannot find the information, try yfinance
+                    try:
+                        sec = yf.Ticker(i).info['sector']
+                        c,m = capitalization(i)
+                    except: #If neither can find information --- set "NA"
+                        sec = "NA" #Some tickers like "8994" will not pull up a result
+                        c = "NA"
+                        m = "NA"
                 cap_designation.append(c)
                 valuation.append(m)
                 sector.append(sec)
@@ -151,7 +190,7 @@ def update_sectors(df):
     conn.close()
     print("\tConnection to sectors.db has been closed")
     
-    return sector_tickers     #Update sectors.db
+    return sector_tickers
 
 def backup_data():
     '''
@@ -361,7 +400,7 @@ def update_capitalization(manual_update=False):
         else:
             pass #Dont execute unless it's Friday
         
-def ticker_lookup_dash(tickers,together=True,funds=None):
+def ticker_lookup_dash(tickers,date1=None,date2=None,together=True,funds=None):
     '''
     This version of `ticker_lookup` instead only returns the dataframe (no plot)
     
@@ -379,6 +418,13 @@ def ticker_lookup_dash(tickers,together=True,funds=None):
     df['date'] = df['date'].astype('datetime64[ns]') #Convert date to datetime object so data can be sorted
     df = df.sort_values(['date','fund'],ascending=True) #Sort by ascending date
 
+    #If a date or dates are provided, truncate the search
+    if date1 is not None:
+        if date2 is None:
+            df = df[df['date']>=date1]
+        else:
+            df = df[(df['date']>=date1)&(df['date']<=date2)]
+
     def log_reduction(val): #Reduce the y-axis by a factor of X
         import numpy as np
         reduced = [np.round(i/1000,2) for i in val] #Reduce share size by factor of 1000
@@ -390,7 +436,8 @@ def ticker_lookup_dash(tickers,together=True,funds=None):
     for ticker in tickers:
         subset = df[df['ticker']==ticker.upper()].groupby('fund')
         for _,r in subset:
-            shares = log_reduction(r['shares'])
+            #shares = log_reduction(r['shares'])
+            shares = r['shares']
             dates = timestamp_to_MonthDay(r['date']) #This converts the correct x-axis from [0,1,2,...,n] to appropriate labels                
             all_df = all_df.append(pd.DataFrame({'fund':r['fund'],'date':dates,'shares':shares})) #df to return in case its useful
     return all_df
@@ -436,6 +483,39 @@ def store_logs(changes,new,closed,alerts):
     new.to_csv(dirr + "new_positions.csv",index=False)
     closed.to_csv(dirr + "closed_positions.csv",index=False)
     print("Daily changes, new/closed, and alert positions have been saved")
+    
+def compute_transactions(ticker,start_date,end_date):
+    transaction_log = see_data() #Grab all data
+    
+    #Filter by ticker
+    transaction_log = transaction_log[transaction_log['ticker']==ticker]
+    
+    #Filter by date
+    transaction_log['date'] = transaction_log['date'].astype("datetime64[ns]")
+    transaction_log = transaction_log[(transaction_log['date']>=start_date)&(transaction_log['date']<=end_date)]
+    
+    #Grab only select columns & sort by fund then date
+    transaction_log = transaction_log[['date','fund','shares','weight']].sort_values(by=['fund','date'])
+
+    #Compute transactions
+    transactions=[]
+    for fund,subset in transaction_log.groupby('fund'):
+        transactions.append(subset['shares'].diff().values) #Compute difference in share price each day per fund
+
+    #Flatten the list of lists and create column from that information
+    transaction_log['change_in_shares'] = [item for sublist in transactions for item in sublist]
+    
+    #Clean up transactions
+    transaction_log = transaction_log.dropna() #Drop NaN values (initialization of position)
+    transaction_log = transaction_log[transaction_log['change_in_shares']!=0] #Drop 0's as they mean no transaction occured
+    
+    #Rename 'shares' to 'total_shares'
+    transaction_log = transaction_log.rename(columns={'shares':'shares_after_transaction'})
+    
+    #Reorganize columns
+    transaction_log = transaction_log[['date','fund','weight','change_in_shares','shares_after_transaction']]
+    
+    return transaction_log
       
 def update_arkfund(display_changes=False,manual_update=False,path = r"C:\Users\Brandon\Desktop\ARK Fund CSV Files"):
     import glob
@@ -488,6 +568,11 @@ def update_arkfund(display_changes=False,manual_update=False,path = r"C:\Users\B
         #Grab sector info
         #1) Check if there are any new unique tickers that havent existed before
         #2) Grab the info if new tickers
+        
+        #Clean up the ticker column of dataframe
+        df_all['ticker'] = df_all['ticker'].str.split().str.get(0) #Split & grab the first word of the ticker column to save as ticker
+            #This converts things like "TAK UN" to "TAK" while still keeping things like "AAPL" as "AAPL"
+        
         sectors = update_sectors(df_all) #Use the function to update any ticker that didnt exist AND obtain df of [ticker,sector]
         
         #Match "Ticker" in arkfunds.db to "sector" from sectors.db
