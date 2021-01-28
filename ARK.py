@@ -1,6 +1,9 @@
-def set_dir(path = r"C:\Users\Brandon\Desktop\ARK Fund CSV Files"):
+def set_dir(path=""):
     import os
-    os.chdir(path)
+    if path != "":
+        os.chdir(path)
+    else:
+        pass #Keep directory as current working directory
 
 def see_data(db=0): #Function to view the data in the database easily
     import sqlite3
@@ -336,67 +339,89 @@ def update_capitalization(manual_update=False):
     import datetime
     
     today = datetime.datetime.today().weekday()
-    #today = 4 #For debug testing, set value to 4 manually
-    if manual_update=="disable":
+    
+    #Check if "update_capitalization" has run today by checking if today's date exists in the checkbox.csv file
+    now = datetime.datetime.now()
+    d = pd.read_csv('Logs/capitalization_checkbox.csv') #Read the file
+    date_now = now.strftime("%m/%d/%Y") #Convert today's date to "MM/DD/YYYY" format
+
+    go_ahead = False #Set boolean value
+    if manual_update == True: #If manual updating ... update the log
+        if date_now in d['date'].values:
+            print("Date already exists -- manual updating request denied")
+        else:
+            go_ahead = True #Else update
+    
+    if manual_update=="disable": #'disable' feature is kind of usless now that the checkbox.csv file exists, oh well~
         pass
     else:
-        if today == 4 or manual_update==True:
-            print("update_capitalization():")
-            print("\tUpdating capitalization information for entire database")
-            conn = sqlite3.connect("ARKFund.db")
-            conn2 = sqlite3.connect("sectors.db")
-            df = pd.read_sql_query("SELECT * FROM arkfunds",conn)
-            print("\tConnection to ARKFund.db established")
-            sectors = pd.read_sql_query("SELECT * FROM sectors",conn2)
-            print("\tConnection to sectors.db established")
+        if today == 4 or go_ahead==True:
+            
+            #Check if today's date exists already
+            if date_now in d['date'].values:
+                go_ahead = False #If so, don't execute again
+            else:
+                d = d.append({'date':date_now,'ran':'yes'},ignore_index=True) #If not, update the file and run capitalization update
+                d.to_csv("Logs/capitalization_checkbox.csv",index=False) #Write the file
+                go_ahead = True
+            
+            if go_ahead == True: #manual_update==True disregards both 
+                print("update_capitalization():")
+                print("\tUpdating capitalization information for entire database")
+                conn = sqlite3.connect("ARKFund.db")
+                conn2 = sqlite3.connect("sectors.db")
+                df = pd.read_sql_query("SELECT * FROM arkfunds",conn)
+                print("\tConnection to ARKFund.db established")
+                sectors = pd.read_sql_query("SELECT * FROM sectors",conn2)
+                print("\tConnection to sectors.db established")
 
-            #Create placeholder lists
-            c = [] #Cap designation (Eg: Small)
-            m = [] #Market cap value (Eg: 1B)
+                #Create placeholder lists
+                c = [] #Cap designation (Eg: Small)
+                m = [] #Market cap value (Eg: 1B)
 
-            count = 0
-            total = len(sectors['ticker'])
-            print("\tUpdating %s tickers:"%total)
-            for i in sectors['ticker']:
-                if count%40 == 0: #Every 40 rows, update the progress
-                    print("\t\t%.2f/100%%"%(np.round(count/total,2)*100))
-                try:
-                    cap_designation,market_cap = capitalization(i)
-                except:
-                    cap_designation,market_cap = ["NA","NA"]
-                c.append(cap_designation)
-                m.append(market_cap)
-                count += 1
+                count = 0
+                total = len(sectors['ticker'])
+                print("\tUpdating %s tickers:"%total)
+                for i in sectors['ticker']:
+                    if count%25 == 0: #Every 25 rows, update the progress
+                        print("\t\t%.2f/100%%"%(np.round(count/total,2)*100))
+                    try:
+                        cap_designation,market_cap = capitalization(i)
+                    except:
+                        cap_designation,market_cap = ["NA","NA"]
+                    c.append(cap_designation)
+                    m.append(market_cap)
+                    count += 1
 
-            print("\t\tDone finding capitalizations -- Merging to `sectors` database")
-            sectors['cap'] = c
-            sectors['market_cap'] = m
+                print("\t\tDone finding capitalizations -- Merging to `sectors` database")
+                sectors['cap'] = c
+                sectors['market_cap'] = m
 
-            print("\tWriting results to sectors.db")
-            sectors.to_sql(name='sectors',con=conn2,if_exists='replace',index=False)
-            print("\t\tSectors.db updated successfully")
+                print("\tWriting results to sectors.db")
+                sectors.to_sql(name='sectors',con=conn2,if_exists='replace',index=False)
+                print("\t\tSectors.db updated successfully")
 
-            #Create dictionaries to map (Ticker --> Cap) and (Ticker --> Market_cap)
-            dct_cap = dict(sectors[['ticker','cap']].to_dict('split')['data']) # dct of {'AAPL':'Large', ... , 'ZM':'Large'}
-            dct_market_cap = dict(sectors[['ticker','market_cap']].to_dict('split')['data']) #dct of {'AAPL':'2180B', ... , 'ZM':'114B'}
+                #Create dictionaries to map (Ticker --> Cap) and (Ticker --> Market_cap)
+                dct_cap = dict(sectors[['ticker','cap']].to_dict('split')['data']) # dct of {'AAPL':'Large', ... , 'ZM':'Large'}
+                dct_market_cap = dict(sectors[['ticker','market_cap']].to_dict('split')['data']) #dct of {'AAPL':'2180B', ... , 'ZM':'114B'}
 
-            df = df.drop(['cap','market_cap'],axis=1) #Drop the cap and market_cap columns because we'll be updating them
+                df = df.drop(['cap','market_cap'],axis=1) #Drop the cap and market_cap columns because we'll be updating them
 
-            #Re-create the columns via mapping
-            df['cap'] = df['ticker'].map(dict(dct_cap))
-            df['market_cap'] = df['ticker'].map(dict(dct_market_cap))
+                #Re-create the columns via mapping
+                df['cap'] = df['ticker'].map(dict(dct_cap))
+                df['market_cap'] = df['ticker'].map(dict(dct_market_cap))
 
-            print("\tWriting results to ARKFunds.db")
-            df.to_sql(name='arkfunds', con=conn, if_exists="replace", index=False)
-            print("\t\tARKFund.db updated successfully")
+                print("\tWriting results to ARKFunds.db")
+                df.to_sql(name='arkfunds', con=conn, if_exists="replace", index=False)
+                print("\t\tARKFund.db updated successfully")
 
-            #Now actually save the data (even though printouts have been saying its been successful)
-            conn.commit()
-            conn2.commit()
+                #Now actually save the data (even though printouts have been saying its been successful)
+                conn.commit()
+                conn2.commit()
 
-            conn.close()
-            conn2.close()
-            print("\tDatabase connections closed successfully")
+                conn.close()
+                conn2.close()
+                print("\tDatabase connections closed successfully")
         else:
             pass #Dont execute unless it's Friday
         
@@ -636,8 +661,9 @@ def update_arkfund(display_changes=False,manual_update=False,path = r"C:\Users\B
     #Backup servers as necessary (Current trigger is: Friday (weekday == 4))
     update_capitalization(manual_update=manual_update) #Updates all info for sectors.db then ARKFund.db ... a bit redundant because we just loaded data today (but runs quite fast)
     backup_data() #function checks weekday and returns nothing if weekday != 4 ... it backs up both ".db" files
-        
+    
     changes, new, closed, alerts = change_in_portfolio() #Determine changes, new positions, closed positions, alerts
+    store_logs(changes,new,closed,alerts)
     if display_changes:
         print("New positions:")
         display(new)
