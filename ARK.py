@@ -588,6 +588,10 @@ def update_arkfund(display_changes=False,manual_update=False,path = r"C:\Users\B
             df = pd.read_csv(file) #Read csv file
             df_all = df_all.append(df) #Append to mega df
             new_data=True
+        else:
+            print("\t%s already exists in the database -- Removing file"%file)
+            os.remove(file)
+            print("File: %s has been deleted"%file)            
             
     if new_data: #If there is data to process
         #Grab sector info
@@ -643,13 +647,8 @@ def update_arkfund(display_changes=False,manual_update=False,path = r"C:\Users\B
         
         #Now that all the work has been done, move the files (do this last to avoid double entry of files)
         for file in files:
-            if file not in existing_files:    
-                os.rename(file, "Processed/"+file) #Move csv file to the processed folder so it doesn't read next time
-                print("\t%s has been uploaded"%file)
-            else:
-                print("\t%s already exists in the database -- Removing file"%file)
-                os.remove(file)
-                print("File: %s has been deleted"%file)
+            os.rename(file, "Processed/"+file) #Move csv file to the processed folder so it doesn't read next time
+            print("\t%s has been uploaded"%file)
     else:
         print("No new data to process")
         sectors = see_data(1) #Grab sectors data to provide as output

@@ -85,3 +85,18 @@ while True: #While or For loops are required to make a "break" statement ... unf
     #Print confirmation of completion
     print("Funds have been downloaded for date of ",df['date'][0])
     break #Exit while loop after 1 loop ... only used the while loop to instate the weekday vs weekend condition
+
+#Now update the database
+
+#To be able to import the ARK.py file and its modules, the directory needs to be added to PATH
+import os
+import sys
+module_path = os.path.abspath(r'C:\Users\Brandon\Desktop\ARK Fund CSV Files')
+if module_path not in sys.path:
+    sys.path.append(module_path)
+
+#Now import ARK.py functions
+from ARK import *
+
+#Run main script which will process today's file and update necessary data tables
+_,_,_,_,_,_ = update_arkfund(display_changes=False,manual_update=False)
