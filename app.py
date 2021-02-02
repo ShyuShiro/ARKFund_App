@@ -25,28 +25,35 @@ if module_path not in sys.path:
 #Now import ARK.py functions
 from ARK import *
 
-set_dir(path) #Set directory
+def start_up():
+    '''
+    Wrapper function to execute updating of database & tables
+    '''
+    set_dir(path) #Set directory
 
-#Before loading the applet -- Run the main function
-df_today,sectors,changes,_,_,alerts = update_arkfund(display_changes=False,manual_update=False) #Leaving `path` argument as default
+    #Before loading the applet -- Run the main function
+    df_today,sectors,changes,_,_,alerts = update_arkfund(display_changes=False,manual_update=False) #Leaving `path` argument as default
 
-#Grab new/close position log files
-new = pd.read_csv(r"Logs\new_positions.csv") #Load in the full log file of new positions
-closed = pd.read_csv(r"Logs\closed_positions.csv") # --------- of the closed positions
+    #Grab new/close position log files
+    new = pd.read_csv(r"Logs\new_positions.csv") #Load in the full log file of new positions
+    closed = pd.read_csv(r"Logs\closed_positions.csv") # --------- of the closed positions
 
-#Sort the changes df by ticker
-changes = changes.sort_values(by='ticker')
+    #Sort the changes df by ticker
+    changes = changes.sort_values(by='ticker')
 
-#Remove unnecessary start vs end date columns for Changes & Alerts
-current_trading_session = changes['end_date'].iloc[0] #Grab the trading session info for reference
-current_trading_session = str(current_trading_session)[:10] #Truncate to YYYY-MM-DD from the original datetime64 obj.
-changes = changes.drop(['start_date','end_date'],axis=1)
-alerts = alerts.drop(['start_date','end_date'],axis=1)
+    #Remove unnecessary start vs end date columns for Changes & Alerts
+    current_trading_session = changes['end_date'].iloc[0] #Grab the trading session info for reference
+    current_trading_session = str(current_trading_session)[:10] #Truncate to YYYY-MM-DD from the original datetime64 obj.
+    changes = changes.drop(['start_date','end_date'],axis=1)
+    alerts = alerts.drop(['start_date','end_date'],axis=1)
 
-df = see_data() #Load all of ARKFund.db as df
+    df = see_data() #Load all of ARKFund.db as df
 
-if df_today.empty: #If this script runs without loading a some data
-    df_today = df[df['date']==df['date'].iloc[-1]]
+    if df_today.empty: #If this script runs without loading a some data
+        df_today = df[df['date']==df['date'].iloc[-1]]
+    return df_today,sectors,changes,alerts,df,current_trading_session,new,closed
+
+df_today,sectors,changes,alerts,df,current_trading_session,new,closed = start_up() #Run on start up of dash app
     
 #Load in dash app with external CSS elements
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
@@ -446,11 +453,18 @@ def update_textbox_transaction_log(start_date,end_date,ticker):
         data=transaction_log.to_dict('records')
     return output_string,columns,data
 
-#Callback for Downloading .csv files & updating funds
-#@app.callback([Output("textbox1","children"),Output('transactions_table','columns'),Output('transactions_table','data')],
-#              [Input("update_db","n_clicks")]
-#             )
-#def update_textbox_transaction_log(start_date,end_date,ticker):
+#Callback for reloading app
+@app.callback([Output("update_db","children")], #This is just a dummy output variable ... not going to change it
+              [Input("update_db","n_clicks"),Input("ticker_input","value")]
+             )
+def reload_app(n_clicks,ticker):
+    if n_clicks > 0:
+        n_clicks = 0 #Reset counter
+        df_today,sectors,changes,alerts,df,current_trading_session,new,closed = start_up() #Run start_up function
+        text = ['Updating...']
+    else:
+        text = ['Update Database']
+    return text
 
 if __name__ == '__main__':
     app.run_server(debug=True,port=8050)
