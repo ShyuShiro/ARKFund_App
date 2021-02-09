@@ -467,7 +467,7 @@ def ticker_lookup_dash(tickers,date1=None,date2=None,together=True,funds=None):
             all_df = all_df.append(pd.DataFrame({'fund':r['fund'],'date':dates,'shares':shares})) #df to return in case its useful
     return all_df
     
-def store_logs(changes,new,closed,alerts):
+def store_logs(changes,new,closed,alerts,new_close_only=False):
     '''
     function to save closed, opened, and changes to .csv output
     
@@ -503,11 +503,15 @@ def store_logs(changes,new,closed,alerts):
     closed = closed.drop_duplicates(ignore_index=True)
     
     #Changes and alert can just be regularly updated (because I'll have a log date associated to these files)
-    changes.to_csv(dirr3 + base+" changes.csv",index=False)
-    alerts.to_csv(dirr2 + base + " alerts.csv",index=False)    
-    new.to_csv(dirr + "new_positions.csv",index=False)
-    closed.to_csv(dirr + "closed_positions.csv",index=False)
-    print("Daily changes, new/closed, and alert positions have been saved")
+    if new_close_only:
+        new.to_csv(dirr + "new_positions.csv",index=False)
+        closed.to_csv(dirr + "closed_positions.csv",index=False)
+    else:
+        changes.to_csv(dirr3 + base+" changes.csv",index=False)
+        alerts.to_csv(dirr2 + base + " alerts.csv",index=False) 
+        new.to_csv(dirr + "new_positions.csv",index=False)
+        closed.to_csv(dirr + "closed_positions.csv",index=False)
+        print("Daily changes, new/closed, and alert positions have been saved")
     
 def compute_transactions(ticker,start_date,end_date):
     transaction_log = see_data() #Grab all data
@@ -542,6 +546,57 @@ def compute_transactions(ticker,start_date,end_date):
     
     return transaction_log
       
+def comprehensive_update_new_closed():
+    '''
+    The current method of "new" and "closed" positions being update is based on the applet SUCCESSFULLY 
+    executing every trading period.
+    
+    If for some reason a singular day is missed, the upload of multiple files (ie: more than 1 file at once)
+    will cause an incorrect computation for what is "new" vs "closed" as the comparison is based solely on
+    {what is present in the database} vs {what is being batch fed right now}
+    
+    Comprehensive update function will iterate date by date and compute the new/close positions 
+    and update the logs appropriately
+    '''
+    import datetime
+    import pandas as pd
+    import os
+    
+    print("comprehensive_update_new_closed()")
+    #Load all data in database
+    df = see_data()
+    
+    #Find all unique dates
+    dates = df['date'].unique()
+
+    #Store the old "new_positions.csv" and "closed_positions.csv" files into an archive (just in case)
+    d = datetime.datetime.today().date()
+    base = str(d.year) + "-" + str(d.month) + "-" + str(d.day)
+    dirr = "Logs/"
+    
+    print("\tMoving old files to archive")
+    files = ['new_positions.csv','closed_positions.csv']
+    for file in files: #Move files to archive
+        os.rename(dirr+file,dirr+"/archive/"+base+file)
+    
+    print("\tCreating blank 'new_positions.csv' and 'closed_positions.csv' files")
+    #Create blank files
+    df_new = pd.DataFrame(columns=["fund","ticker","shares_initiated","initiation_date"])
+    df_new.to_csv(dirr + "new_positions.csv",index=False)
+    
+    df_closed = pd.DataFrame(columns=["fund","ticker","shares_before_sale","close_date"])
+    df_closed.to_csv(dirr + "closed_positions.csv",index=False)
+
+    print("\tLooping to compute all new and all closed positions")
+    #Loop through all unique date entries and feed them to change_in_portfolio() and subsequently store_logs()
+    for i in range(0,len(dates)-1):
+        if i == 0: #On first pass, grab "changes" and "alerts"
+            changes, new, closed, alerts = change_in_portfolio(dates[i],dates[i+1])
+        else: #On all subsequent passes, don't bother generating these df in memory as they're not being used
+            _, new, closed, _ = change_in_portfolio(dates[i],dates[i+1])
+        store_logs(changes,new,closed,alerts,new_close_only=True) #Feeding in changes/alerts column doesnt really change anything.. just feeding in because the function calls for it
+    print("\tComprehensive new/closed position update has been completed")
+    
 def update_arkfund(display_changes=False,manual_update=False,path = r"C:\Users\Brandon\Desktop\ARK Fund CSV Files"):
     import glob
     import os
