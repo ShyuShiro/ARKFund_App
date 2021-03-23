@@ -1,3 +1,14 @@
+# March 22, 2021 update
+It seems ARK investments has implemented security through CloudFlare and are now preventing HTML access.
+
+This prevents BeautifulSoup from accessing the HTML within the webpage --> Cannot download `.csv` files the way I was anymore.
+
+Unfortunately this means the project is non-functional until an alternative method of downloading the files is found =(
+
+---Attempting to HTML access the webpage results in the following messages
+- `<title>Access denied | ark-funds.com used Cloudflare to restrict access</title>`
+- `<p>This website is using a security service to protect itself from online attacks.</p>`
+
 # ARKFund_App
 Applet to download, explore, and analyze ARK fund data
 
